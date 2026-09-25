@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">应用故障诊断</string>
+    <string name="notification_channel">YDiag 诊断监控</string>
+    <string name="notification_title">YDiag 正在监控</string>
+    <string name="notification_text">%1$d 个应用 · %2$d 条事件</string>
+</resources>
