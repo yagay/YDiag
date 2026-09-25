@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YDiag</string>
+    <string name="notification_channel">YDiag diagnostics</string>
+    <string name="notification_title">YDiag is monitoring</string>
+    <string name="notification_text">%1$d apps · %2$d events</string>
+</resources>
