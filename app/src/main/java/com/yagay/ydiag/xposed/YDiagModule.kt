@@ -209,7 +209,7 @@ class YDiagModule : XposedModule() {
             executable = runCatching {
                 FileOutputStream::class.java.getDeclaredConstructor(
                     File::class.java,
-                    Boolean::class.javaPrimitiveType,
+                    Boolean::class.javaPrimitiveType!!,
                 )
             }.getOrNull(),
             option = "file_io",
