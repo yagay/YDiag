@@ -1,0 +1,3 @@
+-keep class com.yagay.ydiag.xposed.** { *; }
+-keepattributes *Annotation*
+-dontwarn io.github.libxposed.**
