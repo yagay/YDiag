@@ -7,37 +7,66 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ydiag-debug-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   debug:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
-      - name: Install Android SDK 37
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install project SDK
         shell: bash
         run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(command -v sdkmanager)"
-          fi
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0"
+          set -o pipefail
+          sdkmanager "cmdline-tools;23.0" 2>&1 | tee sdk-tools.log
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/23.0/bin/sdkmanager"
+          "$SDKMANAGER" --channel=3 "platforms;android-37.0" "build-tools;36.0.0" "platform-tools" 2>&1 | tee sdk-install.log
+          test -s "$ANDROID_HOME/platforms/android-37.0/android.jar"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.4.1"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace --console=plain 2>&1 | tee debug-build.log
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: YDiag-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: YDiag-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: YDiag-build-log-${{ github.run_number }}
+          path: |
+            sdk-tools.log
+            sdk-install.log
+            debug-build.log
           if-no-files-found: ignore
+          retention-days: 7
