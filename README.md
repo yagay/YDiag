@@ -45,3 +45,16 @@ YDiag 是一个面向 Root / LSPosed Android 设备的系统级应用故障诊�
 YDiag 默认只启用低负载诊断。方法 Trace、完整调用栈、Perfetto、全量文件访问等重型能力必须显式开启，避免诊断工具本身影响目标 App。
 
 > Root 负责全局证据采集；LSPosed 负责可选的进程内深度追踪。即使未启用 LSPosed，Root 基础诊断仍可独立工作。
+
+
+## Hook activation
+
+YDiag uses a minimal dynamic scope model:
+
+- `system` is the only default LSPosed scope. YDiag requests it automatically and never force-stops `system_server`.
+- Selected target apps are added to scope dynamically.
+- Default activation mode automatically force-stops and relaunches only ordinary, launchable target apps after first scope approval, so no phone reboot is needed.
+- `android`, `system`, `com.android.systemui`, and `com.android.phone` are never auto-restarted.
+- If a target is already loaded, diagnostic switches update live through remote preferences and existing hooks remain pass-through when disabled.
+- A manual mode and a Root-only mode are available in Settings.
+- App/module updates support libxposed API 102 hot reload; existing hook handles are retired and reinstalled without a device reboot when the framework supports it.

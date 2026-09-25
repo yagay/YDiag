@@ -57,6 +57,9 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
     private val _exportMessage = MutableStateFlow<String?>(null)
     val exportMessage: StateFlow<String?> = _exportMessage.asStateFlow()
 
+    private val _deepActivationMode = MutableStateFlow(prefs.deepActivationMode)
+    val deepActivationMode: StateFlow<String> = _deepActivationMode.asStateFlow()
+
     val monitorState = MonitorService.state
     val moduleState = (application as YDiagApp).moduleState
 
@@ -121,8 +124,18 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
     fun stopMonitoring() {
         _selected.value = emptySet()
         prefs.selectedPackages = emptySet()
+        (getApplication<Application>() as YDiagApp).syncDeepTracking(
+            emptySet(),
+            _enabledOptions.value,
+        )
         context.stopService(Intent(context, MonitorService::class.java))
         refreshHistory()
+    }
+
+    fun setDeepActivationMode(mode: String) {
+        prefs.deepActivationMode = mode
+        _deepActivationMode.value = prefs.deepActivationMode
+        syncService()
     }
 
     fun setExportMode(mode: String) { prefs.exportMode = mode }

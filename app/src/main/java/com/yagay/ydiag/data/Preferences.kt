@@ -31,10 +31,27 @@ class Preferences(context: Context) {
         get() = prefs.getInt("max_session_mb", 128)
         set(value) { prefs.edit().putInt("max_session_mb", value.coerceIn(32, 1024)).apply() }
 
+    var deepActivationMode: String
+        get() = prefs.getString("deep_activation_mode", ACTIVATION_AUTO)
+            ?.takeIf { it in ACTIVATION_MODES } ?: ACTIVATION_AUTO
+        set(value) {
+            prefs.edit().putString(
+                "deep_activation_mode",
+                value.takeIf { it in ACTIVATION_MODES } ?: ACTIVATION_AUTO,
+            ).apply()
+        }
+
     fun optionsFor(packageName: String): Set<String> =
         prefs.getStringSet("options:$packageName", null)?.toSet() ?: enabledOptions
 
     fun setOptionsFor(packageName: String, options: Set<String>) {
         prefs.edit().putStringSet("options:$packageName", options).apply()
+    }
+
+    companion object {
+        const val ACTIVATION_AUTO = "auto"
+        const val ACTIVATION_MANUAL = "manual"
+        const val ACTIVATION_ROOT_ONLY = "root_only"
+        val ACTIVATION_MODES = setOf(ACTIVATION_AUTO, ACTIVATION_MANUAL, ACTIVATION_ROOT_ONLY)
     }
 }

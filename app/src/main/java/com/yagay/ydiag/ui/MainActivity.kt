@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.yagay.ydiag.ModuleState
+import com.yagay.ydiag.data.Preferences
 import com.yagay.ydiag.model.DiagnosticCatalog
 import com.yagay.ydiag.model.DiagnosticCategory
 import com.yagay.ydiag.model.LoadLevel
@@ -98,6 +100,7 @@ private fun YDiagRoot(vm: YDiagViewModel = viewModel()) {
     val exportMessage by vm.exportMessage.collectAsStateWithLifecycle()
     val search by vm.search.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
+    val activationMode by vm.deepActivationMode.collectAsStateWithLifecycle()
 
     var tab by remember { mutableIntStateOf(0) }
     var showPicker by remember { mutableStateOf(false) }
@@ -166,6 +169,7 @@ private fun YDiagRoot(vm: YDiagViewModel = viewModel()) {
             when (tab) {
                 0 -> MonitorScreen(
                     monitor = monitor,
+                    module = module,
                     selected = selected,
                     appLabels = apps.associate { it.packageName to it.label },
                     onSelectApps = { showPicker = true },
@@ -184,6 +188,8 @@ private fun YDiagRoot(vm: YDiagViewModel = viewModel()) {
                     exportMode = vm.exportMode(),
                     customTree = vm.customTree()?.toString(),
                     maxSessionMb = vm.maxSessionMb(),
+                    activationMode = activationMode,
+                    onActivationMode = vm::setDeepActivationMode,
                     onExportMode = vm::setExportMode,
                     onChooseTree = { treeLauncher.launch(vm.customTree()) },
                     onMaxSessionMb = vm::setMaxSessionMb,
@@ -217,6 +223,7 @@ private fun StatusPill(label: String, ok: Boolean) {
 @Composable
 private fun MonitorScreen(
     monitor: MonitorState,
+    module: ModuleState,
     selected: Set<String>,
     appLabels: Map<String, String>,
     onSelectApps: () -> Unit,
@@ -258,6 +265,23 @@ private fun MonitorScreen(
                             )
                         }
                         if (selected.size > 5) Text("还有 ${selected.size - 5} 个…")
+
+                        val loaded = selected.count { it in module.loadedPackages }
+                        Text(
+                            "深度 Hook：$loaded/${selected.size} · system " +
+                                when {
+                                    module.systemLoaded -> "已加载"
+                                    module.systemScoped -> "已授权，等待下次系统启动"
+                                    else -> "未授权"
+                                },
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            module.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
@@ -484,6 +508,8 @@ private fun SettingsScreen(
     exportMode: String,
     customTree: String?,
     maxSessionMb: Int,
+    activationMode: String,
+    onActivationMode: (String) -> Unit,
     onExportMode: (String) -> Unit,
     onChooseTree: () -> Unit,
     onMaxSessionMb: (Int) -> Unit,
@@ -494,6 +520,37 @@ private fun SettingsScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            Text("Hook 生效方式", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "默认只常驻 system；选择目标 App 后动态申请 Scope。SystemUI、Phone、WebView Provider 不默认加入。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    ActivationModeRow(
+                        selected = activationMode == Preferences.ACTIVATION_AUTO,
+                        title = "自动重新加载目标 App  ★ 推荐",
+                        detail = "Scope 首次授权后自动重启并重新打开普通 App；不重启手机。",
+                        onClick = { onActivationMode(Preferences.ACTIVATION_AUTO) },
+                    )
+                    ActivationModeRow(
+                        selected = activationMode == Preferences.ACTIVATION_MANUAL,
+                        title = "提示后手动重新打开",
+                        detail = "自动申请 Scope，但不主动结束目标 App 进程。",
+                        onClick = { onActivationMode(Preferences.ACTIVATION_MANUAL) },
+                    )
+                    ActivationModeRow(
+                        selected = activationMode == Preferences.ACTIVATION_ROOT_ONLY,
+                        title = "只使用 Root 日志",
+                        detail = "不为目标 App 新增 Scope；已加载的 Hook 仍可继续工作。",
+                        onClick = { onActivationMode(Preferences.ACTIVATION_ROOT_ONLY) },
+                    )
+                }
+            }
+        }
         item {
             Text("导出位置", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
@@ -559,6 +616,25 @@ private fun SettingsScreen(
                 "YDiag 只在本机采集与导出。完整日志可能包含应用路径、URL、系统状态等敏感信息，分享诊断包前请确认接收方。",
                 style = MaterialTheme.typography.bodyMedium,
             )
+        }
+    }
+}
+
+@Composable
+private fun ActivationModeRow(
+    selected: Boolean,
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Column(Modifier.weight(1f)) {
+            Text(title)
+            Text(detail, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

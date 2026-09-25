@@ -10,8 +10,11 @@ import android.webkit.WebView
 import com.yagay.ydiag.YDiagApp
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
+import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -53,6 +56,40 @@ class YDiagModule : XposedModule() {
         if (!tracked) {
             Log.i(TAG, "PACKAGE_READY package=$packageName process=$processName tracked=false")
         }
+    }
+
+    override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        packageName = "system"
+        Log.i(TAG, "SYSTEM_SERVER_READY process=$processName")
+        registerPreferenceListener()
+        refreshConfiguration("system_server_ready")
+    }
+
+    @Synchronized
+    override fun onHotReloading(param: HotReloadingParam): Boolean {
+        if (listenerRegistered) {
+            runCatching { preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener) }
+            listenerRegistered = false
+        }
+        Log.i(TAG, "HOT_RELOAD_RETIRING process=$processName package=$packageName")
+        return true
+    }
+
+    override fun onHotReloaded(param: HotReloadedParam) {
+        processName = param.processName
+        packageName = if (param.isSystemServer) "system" else param.processName.substringBefore(':')
+        param.oldHookHandles.forEach { handle ->
+            runCatching { handle.unhook() }
+        }
+        installed.clear()
+        hits.clear()
+        listenerRegistered = false
+        registerPreferenceListener()
+        refreshConfiguration("hot_reloaded")
+        Log.i(
+            TAG,
+            "HOT_RELOAD_READY process=$processName package=$packageName oldHooks=${param.oldHookHandles.size}"
+        )
     }
 
     @Synchronized

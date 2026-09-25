@@ -299,6 +299,7 @@ class MonitorService : Service() {
 
     private fun stopMonitoring() {
         collectPerfetto("停止监控")
+        (application as? YDiagApp)?.syncDeepTracking(emptySet(), options)
         targets = emptySet()
         preferences.selectedPackages = emptySet()
         logJob?.cancel(); logJob = null
