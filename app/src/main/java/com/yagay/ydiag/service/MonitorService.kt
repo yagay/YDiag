@@ -43,14 +43,16 @@ class MonitorService : Service() {
     private var logcatProcess: Process? = null
     private var logJob: Job? = null
     private var processJob: Job? = null
-    private var eventCount = AtomicLong()
-    private var errorCount = AtomicLong()
-    private var warningCount = AtomicLong()
+    private var perfetto: PerfettoController? = null
+    private val eventCount = AtomicLong()
+    private val errorCount = AtomicLong()
+    private val warningCount = AtomicLong()
     private val recentEvents = ArrayDeque<TimelineEvent>()
     private val recentIssues = ArrayDeque<com.yagay.ydiag.model.Issue>()
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         createNotificationChannel()
         rootAvailable = RootShell.isAvailable()
     }
@@ -103,6 +105,7 @@ class MonitorService : Service() {
         if (logJob == null || bufferSignature(previousOptions) != bufferSignature(options)) {
             restartLogcat()
         }
+        syncPerfetto(previousOptions)
         (application as? YDiagApp)?.syncDeepTracking(targets, options)
         publish("正在监控")
     }
@@ -154,6 +157,34 @@ class MonitorService : Service() {
         }
     }
 
+    private fun syncPerfetto(previousOptions: Set<String>) {
+        if (!rootAvailable || session == null) return
+        val wasEnabled = "perfetto" in previousOptions
+        val enabled = "perfetto" in options
+        if (enabled && !wasEnabled && perfetto == null) {
+            val controller = PerfettoController(requireNotNull(session).directory, applicationInfo.uid)
+            if (controller.start()) {
+                perfetto = controller
+                addSystemEvent("Perfetto 已启动", "深度性能 Trace 正在后台采集")
+            } else {
+                addSystemIssue("Perfetto 启动失败", "设备可能不支持当前 Perfetto 命令或 Root 调用失败")
+            }
+        } else if (!enabled && wasEnabled) {
+            collectPerfetto("诊断开关已关闭")
+        }
+    }
+
+    private fun collectPerfetto(reason: String) {
+        val controller = perfetto ?: return
+        perfetto = null
+        val file = controller.stopAndCollect()
+        if (file != null) {
+            addSystemEvent("Perfetto 已保存", "$reason · ${file.name} · ${file.length()} bytes")
+        } else {
+            addSystemIssue("Perfetto 未生成 Trace", reason)
+        }
+    }
+
     private fun consumeLine(line: String) {
         val parsed = LogParser.parse(line)
         val (relevant, packageName) = LogParser.relevant(parsed, targets, processes)
@@ -169,13 +200,13 @@ class MonitorService : Service() {
         if (detection != null) {
             session?.appendIssue(detection.issue)
             rememberIssue(detection.issue)
+            publish(detection.issue.title)
         }
-        if (eventCount.incrementAndGet() % 20L == 0L) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.notify(NOTIFICATION_ID, notification())
-            publish(event.title)
-        } else {
-            publish(event.title)
+
+        val count = eventCount.incrementAndGet()
+        if (count % 20L == 0L) {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+            if (detection == null) publish(event.title)
         }
     }
 
@@ -193,6 +224,7 @@ class MonitorService : Service() {
         )
         session?.appendTimeline(event)
         rememberEvent(event)
+        if ("perfetto" in options) collectPerfetto("用户标记问题时间点")
         publish("已标记问题时间点")
     }
 
@@ -260,7 +292,13 @@ class MonitorService : Service() {
         )
     }
 
+    private fun prepareExportInternal() {
+        if ("perfetto" in options) collectPerfetto("导出诊断包")
+        session?.flush()
+    }
+
     private fun stopMonitoring() {
+        collectPerfetto("停止监控")
         targets = emptySet()
         preferences.selectedPackages = emptySet()
         logJob?.cancel(); logJob = null
@@ -294,6 +332,8 @@ class MonitorService : Service() {
         listOf("logcat","crash","events").filter { it in value }.joinToString(",")
 
     override fun onDestroy() {
+        if (activeInstance === this) activeInstance = null
+        runCatching { collectPerfetto("服务销毁") }
         runCatching { session?.close() }
         runCatching { logcatProcess?.destroy() }
         scope.cancel()
@@ -311,7 +351,12 @@ class MonitorService : Service() {
         private const val CHANNEL_ID = "ydiag_monitor"
         private const val NOTIFICATION_ID = 7301
 
+        @Volatile private var activeInstance: MonitorService? = null
         private val _state = MutableStateFlow(MonitorState())
         val state: StateFlow<MonitorState> = _state
+
+        fun prepareForExport() {
+            activeInstance?.prepareExportInternal()
+        }
     }
 }
