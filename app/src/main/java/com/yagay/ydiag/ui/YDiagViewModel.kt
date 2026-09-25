@@ -68,9 +68,7 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshApps() {
-        viewModelScope.launch {
-            _apps.value = appsRepo.installedApps()
-        }
+        viewModelScope.launch { _apps.value = appsRepo.installedApps() }
     }
 
     fun refreshHistory() {
@@ -81,21 +79,6 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSearch(value: String) { _search.value = value }
     fun setFilter(value: AppFilter) { _filter.value = value }
-
-    fun visibleApps(): List<InstalledApp> {
-        val query = _search.value.trim()
-        return _apps.value.filter { app ->
-            val typeMatch = when (_filter.value) {
-                AppFilter.ALL -> true
-                AppFilter.USER -> !app.system
-                AppFilter.SYSTEM -> app.system
-                AppFilter.MONITORED -> app.packageName in _selected.value
-            }
-            typeMatch && (query.isBlank() ||
-                app.label.contains(query, true) ||
-                app.packageName.contains(query, true))
-        }
-    }
 
     fun togglePackage(packageName: String) {
         val next = _selected.value.toMutableSet().apply {
@@ -127,26 +110,22 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun markProblem() {
-        ContextCompat.startForegroundService(
-            context,
-            Intent(context, MonitorService::class.java).setAction(MonitorService.ACTION_MARK),
-        )
+        if (!_selected.value.isEmpty()) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, MonitorService::class.java).setAction(MonitorService.ACTION_MARK),
+            )
+        }
     }
 
     fun stopMonitoring() {
         _selected.value = emptySet()
         prefs.selectedPackages = emptySet()
-        ContextCompat.startForegroundService(
-            context,
-            Intent(context, MonitorService::class.java).setAction(MonitorService.ACTION_STOP),
-        )
+        context.stopService(Intent(context, MonitorService::class.java))
         refreshHistory()
     }
 
-    fun setExportMode(mode: String) {
-        prefs.exportMode = mode
-    }
-
+    fun setExportMode(mode: String) { prefs.exportMode = mode }
     fun exportMode(): String = prefs.exportMode
     fun customTree(): Uri? = prefs.customExportTree?.let(Uri::parse)
 
@@ -165,6 +144,7 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _exportMessage.value = "正在生成完整诊断包…"
             val uri = withContext(Dispatchers.IO) {
+                MonitorService.prepareForExport()
                 val tree = if (prefs.exportMode == "custom") customTree() else null
                 DiagnosticExporter(context).exportLatest(tree)
             }
@@ -179,6 +159,7 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _exportMessage.value = "正在导出 ${item.meta.id}…"
             val uri = withContext(Dispatchers.IO) {
+                MonitorService.prepareForExport()
                 val tree = if (prefs.exportMode == "custom") customTree() else null
                 DiagnosticExporter(context).export(item.directory, item.meta, tree)
             }
@@ -187,17 +168,13 @@ class YDiagViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearExportMessage() { _exportMessage.value = null }
-
     fun setMaxSessionMb(value: Int) { prefs.maxSessionMb = value }
     fun maxSessionMb(): Int = prefs.maxSessionMb
 
     private fun syncService() {
         val packages = ArrayList(_selected.value)
         if (packages.isEmpty()) {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, MonitorService::class.java).setAction(MonitorService.ACTION_STOP),
-            )
+            context.stopService(Intent(context, MonitorService::class.java))
             return
         }
         val intent = Intent(context, MonitorService::class.java)
