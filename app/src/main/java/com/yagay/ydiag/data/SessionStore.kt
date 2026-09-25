@@ -66,6 +66,7 @@ class SessionWriter(
     private val timelineWriter = FileWriter(File(directory, "timeline.jsonl"), true)
     private val issuesWriter = FileWriter(File(directory, "issues.jsonl"), true)
     private val processWriter = FileWriter(File(directory, "process-snapshots.txt"), true)
+    private var rawSinceFlush = 0
 
     @Synchronized
     fun appendRaw(line: String) {
@@ -77,6 +78,11 @@ class SessionWriter(
             rawWriter = FileWriter(rawFile, true)
         }
         rawWriter.appendLine(line)
+        rawSinceFlush += 1
+        if (rawSinceFlush >= 16) {
+            rawWriter.flush()
+            rawSinceFlush = 0
+        }
     }
 
     @Synchronized
@@ -108,10 +114,21 @@ class SessionWriter(
     fun markProblem(timestamp: Long) {
         meta = meta.copy(problemMarks = meta.problemMarks + timestamp)
         writeMeta()
+        flush()
+    }
+
+    @Synchronized
+    fun flush() {
+        rawWriter.flush()
+        timelineWriter.flush()
+        issuesWriter.flush()
+        processWriter.flush()
+        rawSinceFlush = 0
     }
 
     @Synchronized
     fun finish() {
+        flush()
         meta = meta.copy(endedAt = System.currentTimeMillis())
         writeMeta()
     }
@@ -124,9 +141,9 @@ class SessionWriter(
 
     override fun close() {
         runCatching { finish() }
-        runCatching { rawWriter.flush(); rawWriter.close() }
-        runCatching { timelineWriter.flush(); timelineWriter.close() }
-        runCatching { issuesWriter.flush(); issuesWriter.close() }
-        runCatching { processWriter.flush(); processWriter.close() }
+        runCatching { rawWriter.close() }
+        runCatching { timelineWriter.close() }
+        runCatching { issuesWriter.close() }
+        runCatching { processWriter.close() }
     }
 }
